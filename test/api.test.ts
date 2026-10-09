@@ -48,6 +48,9 @@ describe('API HTTP', () => {
     expect(res.json().error).toMatch(/total_price deve ser string decimal/);
     const bad = await app.inject({ method: 'POST', url: '/webhooks/orders', payload: '{', headers: { 'content-type': 'application/json' } });
     expect(bad.json()).toEqual({ error: 'JSON inválido' });
+    const text = await app.inject({ method: 'POST', url: '/webhooks/orders', payload: '<x/>', headers: { 'content-type': 'application/xml' } });
+    expect(text.statusCode).toBe(415);
+    expect(text.json()).toEqual({ error: 'content-type deve ser application/json' });
   });
 
   it('HMAC: com segredo configurado, rejeita assinatura ausente ou errada e aceita a assinatura do corpo cru', async () => {
@@ -55,11 +58,15 @@ describe('API HTTP', () => {
     const app = buildApp({ sales: setup().sales, webhookSecret: secret });
     const body = JSON.stringify(orderPayload());
     const sign = (b: string) => createHmac('sha256', secret).update(b).digest('base64');
-    const req = (hmac?: string) =>
-      app.inject({ method: 'POST', url: '/webhooks/orders', payload: body, headers: { 'content-type': 'application/json', ...(hmac && { 'x-shopify-hmac-sha256': hmac }) } });
+    const req = (hmac?: string, url = '/webhooks/orders', payload = body) =>
+      app.inject({ method: 'POST', url, payload, headers: { 'content-type': 'application/json', ...(hmac && { 'x-shopify-hmac-sha256': hmac }) } });
 
     expect((await req()).statusCode).toBe(401);
     expect((await req(sign(body + ' '))).statusCode).toBe(401);
     expect((await req(sign(body))).statusCode).toBe(200);
+
+    const refund = JSON.stringify(refundPayload(1, '10.00'));
+    expect((await req(undefined, '/webhooks/refunds', refund)).statusCode).toBe(401);
+    expect((await req(sign(refund), '/webhooks/refunds', refund)).json().status).toBe('applied');
   });
 });

@@ -26,15 +26,18 @@ export function buildApp({ sales, webhookSecret }: { sales: Sales; webhookSecret
     try {
       done(null, JSON.parse(body.toString('utf8')));
     } catch {
-      done(Object.assign(new Error('JSON inválido'), { statusCode: 400 }), undefined);
+      done(new ValidationError('JSON inválido'), undefined);
     }
   });
 
+  // Fastify's own errors (415, 413...) come in English; answer in Portuguese.
   app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
     if (err instanceof ValidationError) return reply.code(400).send({ error: err.message });
     const code = err.statusCode ?? 500;
-    return reply.code(code).send({ error: code >= 500 ? 'erro interno' : err.message });
+    const error = code === 415 ? 'content-type deve ser application/json' : code >= 500 ? 'erro interno' : 'requisição inválida';
+    return reply.code(code).send({ error });
   });
+  app.setNotFoundHandler((_req, reply) => reply.code(404).send({ error: 'rota não encontrada' }));
 
   // Optional, as in Shopify: only enforced when a secret is configured.
   const verifyHmac = async (req: FastifyRequest, reply: FastifyReply) => {

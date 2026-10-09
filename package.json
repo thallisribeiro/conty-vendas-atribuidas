@@ -5,7 +5,7 @@
   "description": "Webhooks de pedido e estorno (formato Shopify) com venda atribuída a um criador",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12"
   },
   "scripts": {
     "start": "tsx src/server.ts",

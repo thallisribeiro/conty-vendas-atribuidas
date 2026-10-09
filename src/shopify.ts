@@ -77,6 +77,7 @@ export function parseRefund(body: unknown): ParsedRefund {
   const amountCents = r.transactions
     .filter((t: any) => t?.kind === 'refund' && t?.status === 'success')
     .reduce((sum: number, t: Json) => sum + toCents(t.amount, 'transactions[].amount'), 0);
+  if (!Number.isSafeInteger(amountCents)) throw new ValidationError('valor do estorno grande demais');
   if (amountCents <= 0) throw new ValidationError('estorno precisa de transação kind "refund", status "success" e valor maior que zero');
   return { id: toId(r.id, 'id'), orderId: toId(r.order_id, 'order_id'), amountCents };
 }

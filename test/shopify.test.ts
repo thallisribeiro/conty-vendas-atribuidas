@@ -35,4 +35,10 @@ describe('payload Shopify', () => {
     );
     expect(parseRefund(body)).toEqual({ id: '1', orderId: '5745289543874', amountCents: 5000 });
   });
+
+  it('rejeita estorno cuja soma passa do maior inteiro seguro', () => {
+    const body = refundPayload(1, '90071992547409.91');
+    body.transactions.push({ id: 2, amount: '90071992547409.91', currency: 'BRL', kind: 'refund', status: 'success' });
+    expect(() => parseRefund(body)).toThrow(/grande demais/);
+  });
 });

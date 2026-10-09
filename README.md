@@ -5,7 +5,7 @@ Pedido repetido não soma de novo, estorno vira lançamento rastreável (nunca p
 
 ## Como rodar e testar
 
-Node >= 20.
+Node >= 22.12 (exigência do vitest 5).
 
 ```bash
 npm ci
@@ -136,7 +136,7 @@ Erros: payload inválido responde `400` com `{"error":"total_price deve ser stri
   1. **Cupom vence UTM.** O cupom foi digitado pelo comprador no checkout; a UTM pode ser de um clique antigo ou do link de outro criador. Com mais de um cupom de criador, vale o primeiro de `discount_codes`.
   2. Sem cupom de criador, vale `utm_campaign` (de `note_attributes`; na falta, da query de `landing_site`). Cupom que não é de criador (ex.: `FRETEGRATIS`) não atrapalha a UTM.
   3. Nenhum dos dois: venda sem criador (`creatorId: null`).
-  Comparação sem diferenciar maiúsculas e espaços. O `reason` explica a decisão, inclusive o que foi ignorado. A atribuição é congelada na chegada do pedido.
+  Comparação sem diferenciar maiúsculas nem espaços nas pontas. O `reason` explica a decisão, inclusive o que foi ignorado. A atribuição é congelada na chegada do pedido.
 - **Dinheiro:** centavos inteiros. `"199.90"` é lido como string e separado em parte inteira e centavos, sem float (`toCents` em `src/shopify.ts`). `total_price` numérico, negativo ou com 3 casas é rejeitado. A moeda vem de `currency` e fica no pedido; totais do criador são separados por moeda.
 - **Pedido idempotente por `id`:** o segundo webhook do mesmo pedido responde `200 {"status":"duplicate"}` e não cria lançamento. Vale o primeiro payload.
 - **`financial_status`:** só `paid`, `partially_refunded` e `refunded` viram venda. `pending`, `authorized`, `voided` etc. respondem `200 {"status":"ignored"}` sem guardar nada, então o mesmo pedido entra quando chegar como pago.
@@ -158,13 +158,15 @@ Erros: payload inválido responde `400` com `{"error":"total_price deve ser stri
 | Webhook repetido não soma a venda de novo | `test/sales.test.ts`: "webhook de pedido repetido não soma a venda de novo e responde duplicado"; `test/api.test.ts`: "fluxo HTTP: estorno antes do pedido, pedido duplicado, estorno repetido e consultas" |
 | Estorno rastreável | `test/sales.test.ts`: "estorno parcial vira lançamento negativo e reduz o líquido sem apagar a venda"; "estorno total deixa o líquido do criador em zero, mas a venda e a atribuição continuam no histórico" |
 | Soma dos estornos nunca passa da venda | `test/sales.test.ts`: "soma dos estornos nunca passa do valor da venda: excedente é limitado ao saldo e fica registrado"; "pendentes que passam do valor do pedido são limitados ao saldo quando o pedido chega" |
-| Estorno parcial | `test/sales.test.ts`: "estorno parcial vira lançamento negativo..."; "vários estornos parciais com ids diferentes somam" |
+| Estorno parcial | `test/sales.test.ts`: "estorno parcial vira lançamento negativo e reduz o líquido sem apagar a venda"; "vários estornos parciais com ids diferentes somam" |
 | Estorno repetido | `test/sales.test.ts`: "estorno repetido com o mesmo id não é aplicado duas vezes"; "pendente repetido continua um só e é aplicado uma vez" |
-| Estorno antes do pedido não se perde | `test/sales.test.ts`: "fica pendente com motivo e é aplicado quando o pedido chega"; "pedido repetido depois do estorno pendente não aplica o estorno de novo"; `test/api.test.ts`: fluxo HTTP (404 mostra o pendente) |
+| Estorno antes do pedido não se perde | `test/sales.test.ts`: "fica pendente com motivo e é aplicado quando o pedido chega"; "pedido repetido depois do estorno pendente não aplica o estorno de novo"; `test/api.test.ts`: "fluxo HTTP: estorno antes do pedido, pedido duplicado, estorno repetido e consultas" (o 404 mostra o pendente) |
 | Regra de atribuição num lugar só, com teste | `src/attribution.ts` `attribute()`; `test/attribution.test.ts`: os 7 testes |
 | Desempate cupom × UTM de criadores diferentes | `test/attribution.test.ts`: "cupom e UTM de criadores diferentes: o cupom vence e o motivo diz que a UTM foi ignorada" |
-| Só cupom / só UTM / nenhum / cupom desconhecido + UTM válida | `test/attribution.test.ts`: "só cupom...", "só UTM...", "nem cupom nem UTM de criador...", "cupom desconhecido com UTM válida: atribui pela UTM" |
-| Dinheiro em centavos, sem float | `test/shopify.test.ts`: "converte a string decimal do webhook em centavos inteiros sem passar por float" |
+| Só cupom / só UTM / nenhum / cupom desconhecido + UTM válida | `test/attribution.test.ts`: "só cupom: atribui ao dono do cupom", "só UTM: atribui ao dono da utm_campaign", "nem cupom nem UTM de criador: venda fica sem criador", "cupom desconhecido com UTM válida: atribui pela UTM" |
+| Dinheiro em centavos, sem float, com moeda | `test/shopify.test.ts`: "converte a string decimal do webhook em centavos inteiros sem passar por float"; `test/sales.test.ts`: "venda guarda moeda e valor em centavos e a atribuição com o motivo" |
+| `financial_status` não pago | `test/sales.test.ts`: "pedido ainda não pago (financial_status pending) é ignorado e entra quando chega como paid" |
+| Payload inválido | `test/api.test.ts`: "payload inválido responde 400 com mensagem em português" |
 | HMAC | `test/api.test.ts`: "HMAC: com segredo configurado, rejeita assinatura ausente ou errada e aceita a assinatura do corpo cru" |
 
 ## O que ficou de fora / com mais tempo
@@ -175,6 +177,8 @@ Erros: payload inválido responde `400` com `{"error":"total_price deve ser stri
 - Moeda do estorno é assumida igual à do pedido; moedas com 3 casas decimais (KWD, BHD) são rejeitadas pelo parser de 2 casas.
 - Estorno pendente cujo pedido nunca chega fica pendente para sempre; faria um relatório/alerta por idade.
 - Cadastro de criadores e de cupons por API; aqui são configuração fixa.
+- Estorno sem dinheiro (só devolução ao estoque, sem transação `refund` com sucesso) responde `400`; o certo seria `200` ignorado.
+- Com segredo HMAC, o corpo é lido antes da assinatura, então JSON inválido sem assinatura recebe `400` e não `401`.
 - Payload inválido responde `400`, o que faz a Shopify reenviar; em produção eu guardaria o corpo cru numa fila de rejeitados e responderia `200`.
 
 ## Uso de IA

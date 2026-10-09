@@ -41,7 +41,7 @@ export class MemoryRepository implements Repository {
   addOrder = (order: Order) => void this.orders.set(order.id, order);
   getRefund = (id: string) => this.refunds.get(id);
   saveRefund = (refund: Refund) => void this.refunds.set(refund.id, refund);
-  // ponytail: full scans; a database indexes refunds.order_id and orders.creator_id
+  // Full scans; a database indexes refunds.order_id and orders.creator_id.
   refundsOf = (orderId: string) => [...this.refunds.values()].filter((r) => r.orderId === orderId);
   ordersOf = (creatorId: string) => [...this.orders.values()].filter((o) => o.attribution.creatorId === creatorId);
 }
